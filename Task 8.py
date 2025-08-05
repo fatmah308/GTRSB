@@ -15,6 +15,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # Data Loading
 def load_datasets():
@@ -34,10 +35,7 @@ train, test, meta = load_datasets()
 if train is None:
     exit()
 
-# After loading train/test datasets but BEFORE preprocessing
-# ======================
 # CLASS DISTRIBUTION CHECK
-# ======================
 from collections import Counter
 
 print("Full dataset class distribution:")
@@ -45,9 +43,110 @@ print(Counter(train['ClassId']))
 
 missing_classes = set(range(43)) - set(train['ClassId'].unique())
 if missing_classes:
-    print(f"⚠️ Warning: Missing classes in original data: {missing_classes}")
+    print(f"Warning: Missing classes in original data: {missing_classes}")
 else:
-    print("✅ All classes present in raw data")
+    print("All classes present in raw data")
+
+#Class Distribution Plot (Before Training)
+def plot_class_distribution(y_train, class_names):
+    plt.figure(figsize=(15, 6))
+    class_counts = np.bincount(np.argmax(y_train, axis=1))
+    plt.bar(range(len(class_counts)), class_counts, color='skyblue')
+    plt.xticks(range(len(class_names)), list(class_names.values()), rotation=90)
+    plt.title('Training Data Class Distribution')
+    plt.xlabel('Traffic Sign Class')
+    plt.ylabel('Number of Samples')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig('class_distribution.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# 2. Sample Predictions with Ground Truth (After Evaluation)
+def plot_sample_predictions(X_test, y_true, y_pred, class_names, n=5):
+    errors = np.where(y_pred != y_true)[0]
+    correct = np.where(y_pred == y_true)[0]
+    
+    plt.figure(figsize=(15, 8))
+    
+    # Correct predictions
+    plt.suptitle('Model Predictions (Green=Correct, Red=Wrong)', y=1.02)
+    for i in range(min(n, len(correct))):
+        plt.subplot(2, n, i+1)
+        plt.imshow(X_test[correct[i]])
+        plt.title(f"True: {class_names[y_true[correct[i]]]}\nPred: {class_names[y_pred[correct[i]]]}")
+        plt.axis('off')
+        plt.gca().set_facecolor('lightgreen')
+    
+    # Incorrect predictions
+    for i in range(min(n, len(errors))):
+        plt.subplot(2, n, n+i+1)
+        plt.imshow(X_test[errors[i]])
+        plt.title(f"True: {class_names[y_true[errors[i]]]}\nPred: {class_names[y_pred[errors[i]]]}")
+        plt.axis('off')
+        plt.gca().set_facecolor('lightcoral')
+    
+    plt.tight_layout()
+    plt.savefig('sample_predictions.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# 3. Enhanced Confusion Matrix (Top 20 Classes)
+def plot_confusion_matrix(y_true, y_pred, class_names):
+    plt.figure(figsize=(15, 12))
+    cm = confusion_matrix(y_true, y_pred, normalize='true')
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm[:20, :20],
+                                display_labels=list(class_names.values())[:20])
+    disp.plot(cmap='Blues', xticks_rotation=90, values_format='.2f')
+    plt.title('Normalized Confusion Matrix (Top 20 Classes)', pad=20)
+    plt.tight_layout()
+    plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# 4. Training History Plots
+def plot_training_history(history):
+    plt.figure(figsize=(12, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train')
+    plt.plot(history.history['val_accuracy'], label='Validation')
+    plt.title('Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend()
+    
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train')
+    plt.plot(history.history['val_loss'], label='Validation')
+    plt.title('Model Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig('training_history.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# 5. Per-Class Metrics Bar Chart
+def plot_metrics_by_class(y_true, y_pred, class_names):
+    from sklearn.metrics import precision_recall_fscore_support
+    
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average=None)
+    metrics_df = pd.DataFrame({
+        'Class': [class_names[i] for i in range(len(class_names))],
+        'Precision': precision,
+        'Recall': recall,
+        'F1-Score': f1
+    }).sort_values('F1-Score', ascending=False)
+    
+    plt.figure(figsize=(12, 8))
+    metrics_df.head(20).plot(x='Class', y=['Precision', 'Recall', 'F1-Score'], 
+                            kind='bar', colormap='coolwarm')
+    plt.title('Top 20 Classes by F1-Score')
+    plt.ylabel('Score')
+    plt.xticks(rotation=45, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig('class_metrics.png', dpi=300, bbox_inches='tight')
+    plt.show()
 
 # Data Preprocessing
 def preprocess_image(img_path, roi_coords, target_size=(32, 32)):
@@ -74,9 +173,7 @@ def preprocess_image(img_path, roi_coords, target_size=(32, 32)):
     except:
         return None
 
-# ======================
 # MODIFIED DATA LOADER
-# ======================
 def load_balanced_dataset(df, target_size=(32, 32), sample_fraction=1.0):
     """Ensures all classes are represented"""
     # Group by class and sample evenly
@@ -196,33 +293,17 @@ def evaluate_model(model, X_test, y_test, class_names):
 print("\n Evaluating model...")
 evaluate_model(model, X_test, y_test, class_names)
 
-# BONUS: MobileNetV2
-def build_mobilenet():
-    from tensorflow.keras.applications import MobileNetV2
-    from tensorflow.keras.layers import GlobalAveragePooling2D
-    
-    base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(96, 96, 3))
-    base_model.trainable = False
-    
-    model = Sequential([
-        base_model,
-        GlobalAveragePooling2D(),
-        Dense(128, activation='relu'),
-        Dense(num_classes, activation='softmax')
-    ])
-    
-    model.compile(optimizer='adam',
-                loss='categorical_crossentropy',
-                metrics=['accuracy'])
-    return model
+# 1. Class distribution
+plot_class_distribution(y_train, class_names)
 
-print("\n Bonus: MobileNetV2 Model")
-X_train_mobile = np.array([cv2.resize(img, (96, 96)) for img in X_train])
-X_test_mobile = np.array([cv2.resize(img, (96, 96)) for img in X_test])
+# 2. Training curves
+plot_training_history(history)
 
-mobilenet = build_mobilenet()
-mobilenet.fit(
-    datagen.flow(X_train_mobile, y_train, batch_size=32),
-    epochs=5,
-    validation_data=(X_test_mobile, y_test)
-)
+# 3. After evaluation:
+y_pred = np.argmax(model.predict(X_test), axis=1)
+y_true = np.argmax(y_test, axis=1)
+
+plot_sample_predictions(X_test, y_true, y_pred, class_names)
+plot_confusion_matrix(y_true, y_pred, class_names)
+plot_metrics_by_class(y_true, y_pred, class_names)
+
