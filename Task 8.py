@@ -200,6 +200,60 @@ def load_balanced_dataset(df, target_size=(32, 32), sample_fraction=1.0):
     
     return np.array(images), np.array(labels)
 
+def test_single_image(image_path, model, class_names):
+    """
+    Test a single traffic sign image with the trained model
+    
+    Args:
+        image_path (str): Path to the test image
+        model (keras.Model): Your trained CNN model
+        class_names (dict): Dictionary mapping class IDs to sign names
+    """
+    # 1. Manually define ROI coordinates or use default full-image
+    # For real use, you'd want to detect ROI automatically or use known coordinates
+    roi_coords = [5, 5, 28, 28]  # [x1, y1, x2, y2] - adjust based on your image
+    
+    # 2. Preprocess the image exactly like training data
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"Error: Could not read image at {image_path}")
+        return
+    
+    # Convert and crop
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    x1, y1, x2, y2 = roi_coords
+    cropped = img[y1:y2, x1:x2]
+    
+    # Resize and normalize
+    resized = cv2.resize(cropped, (32, 32))
+    normalized = resized.astype(np.float32) / 255.0
+    
+    # 3. Add batch dimension (model expects [batch, height, width, channels])
+    input_tensor = np.expand_dims(normalized, axis=0)
+    
+    # 4. Make prediction
+    predictions = model.predict(input_tensor)
+    predicted_class = np.argmax(predictions[0])
+    confidence = np.max(predictions[0])
+    
+    # 5. Display results
+    plt.figure(figsize=(8, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.imshow(resized)
+    plt.title("Processed Input")
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.barh(list(class_names.values()), predictions[0])
+    plt.title(f"Prediction: {class_names[predicted_class]}\nConfidence: {confidence:.2%}")
+    plt.xlabel("Probability")
+    plt.tight_layout()
+    
+    plt.show()
+
+    return predicted_class, confidence
+
 # Usage (replace your current load calls):
 X_train, y_train = load_balanced_dataset(train, sample_fraction=0.3)
 X_test, y_test = load_balanced_dataset(test, sample_fraction=0.3)
@@ -307,3 +361,9 @@ plot_sample_predictions(X_test, y_true, y_pred, class_names)
 plot_confusion_matrix(y_true, y_pred, class_names)
 plot_metrics_by_class(y_true, y_pred, class_names)
 
+# Example usage:
+test_image_path = "your_test_image.jpg"  # Replace with your image path
+predicted_class, confidence = test_single_image(test_image_path, model, class_names)
+
+print(f"Predicted: {class_names[predicted_class]} (Class {predicted_class})")
+print(f"Confidence: {confidence:.2%}")
